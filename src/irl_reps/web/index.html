@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Who are my TDs? — Ireland</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <style>
+    :root { --ink:#1a1a1a; --muted:#666; --line:#e3e3e3; --accent:#0b6; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:16px/1.5 system-ui, sans-serif; color:var(--ink); }
+    header { padding:1rem 1.25rem; border-bottom:1px solid var(--line);
+             display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
+    h1 { margin:0 0 .25rem; font-size:1.25rem; }
+    header p { margin:0; color:var(--muted); font-size:.9rem; }
+    .links { display:flex; flex-direction:column; align-items:flex-end; gap:.15rem; }
+    .support { font-size:.85rem; color:var(--accent); white-space:nowrap; text-decoration:none; }
+    .support:hover { text-decoration:underline; }
+    .wrap { display:grid; grid-template-columns:1fr 1fr; gap:0; min-height:70vh; }
+    #map { min-height:50vh; }
+    .panel { padding:1.25rem; border-left:1px solid var(--line); overflow:auto; }
+    .controls { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
+    select { padding:.45rem .5rem; font:inherit; border:1px solid var(--line); border-radius:6px; }
+    .hint { color:var(--muted); font-size:.9rem; }
+    .area { margin:0 0 1rem; }
+    .area b { display:block; font-size:1.1rem; }
+    h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+         margin:1.25rem 0 .5rem; border-bottom:1px solid var(--line); padding-bottom:.25rem; }
+    ul { list-style:none; margin:0; padding:0; }
+    li { padding:.4rem 0; border-bottom:1px solid var(--line); }
+    .name { font-weight:600; }
+    .meta { color:var(--muted); font-size:.9rem; }
+    a { color:var(--accent); }
+    .empty { color:var(--muted); font-style:italic; }
+    @media (max-width:760px){ .wrap{ grid-template-columns:1fr; } .panel{ border-left:none; border-top:1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Who are my TDs?</h1>
+      <p>Hover a constituency to see its name; click it (or anywhere) to see its TDs.
+         Or pick a constituency from the list.</p>
+    </div>
+    <div class="links">
+      <a class="support" href="mailto:tiago.tamagusko@ucd.ie">Support: tiago.tamagusko@ucd.ie</a>
+      <a class="support" href="/docs">API documentation</a>
+    </div>
+  </header>
+  <div class="wrap">
+    <div id="map"></div>
+    <div class="panel">
+      <div class="controls">
+        <label for="constituency" class="hint">Constituency:</label>
+        <select id="constituency"><option value="">— choose a constituency —</option></select>
+      </div>
+      <div id="result"><p class="hint">Pick a point on the map to begin.</p></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    const API = new URLSearchParams(location.search).get("api") || "";
+    const result = document.getElementById("result");
+    const map = L.map("map").setView([53.4, -7.9], 7);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18, attribution: "© OpenStreetMap"
+    }).addTo(map);
+    let marker = null;
+
+    function runLookup(latlng) {
+      if (marker) marker.remove();
+      marker = L.marker(latlng).addTo(map);
+      lookup(latlng.lat.toFixed(5), latlng.lng.toFixed(5));
+    }
+
+    // Constituency outlines: subtle by default, green fill + name on hover.
+    const baseStyle = { color: "#0b6", weight: 1, fillColor: "#0b6", fillOpacity: 0 };
+    let constituencies = null;
+    fetch(API + "/boundaries").then(r => r.json()).then(gj => {
+      constituencies = L.geoJSON(gj, {
+        style: () => baseStyle,
+        onEachFeature: (f, layer) => {
+          layer.bindTooltip(f.properties.name, { sticky: true, direction: "top" });
+          layer.on("mouseover", () => layer.setStyle({ fillOpacity: 0.2, weight: 2 }));
+          layer.on("mouseout", () => constituencies.resetStyle(layer));
+          layer.on("click", e => runLookup(e.latlng));
+        }
+      }).addTo(map);
+    }).catch(() => {});
+
+    const el = (tag, text, cls) => {
+      const n = document.createElement(tag);
+      if (text != null) n.textContent = text;
+      if (cls) n.className = cls;
+      return n;
+    };
+
+    function repItem(r) {
+      const li = el("li");
+      li.append(el("div", r.name, "name"));
+      if (r.party) li.append(el("div", r.party, "meta"));
+      if (r.email) {
+        const a = el("a", r.email); a.href = "mailto:" + r.email;
+        const m = el("div", null, "meta"); m.append(a); li.append(m);
+      }
+      return li;
+    }
+
+    function section(title, reps, emptyMsg) {
+      const frag = document.createDocumentFragment();
+      frag.append(el("h2", title));
+      if (reps && reps.length) {
+        const ul = el("ul"); reps.forEach(r => ul.append(repItem(r))); frag.append(ul);
+      } else {
+        frag.append(el("p", emptyMsg, "empty"));
+      }
+      return frag;
+    }
+
+    async function getJSON(path) {
+      const res = await fetch(API + path);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error?.message || ("HTTP " + res.status));
+      return body;
+    }
+
+    function renderArea(name, tds, lastUpdated) {
+      const area = el("div", null, "area");
+      area.append(el("b", name));
+      area.append(el("div", "Dáil constituency", "meta"));
+      result.replaceChildren(area);
+      result.append(section("TDs", tds, "No TDs found."));
+      if (lastUpdated) result.append(el("p", "Data updated " + lastUpdated, "hint"));
+    }
+
+    async function lookup(lat, lon) {
+      result.replaceChildren(el("p", "Looking up…", "hint"));
+      try {
+        const d = await getJSON(`/lookup?lat=${lat}&lon=${lon}`);
+        renderArea(d.area.dail_constituency, d.tds, d.data_last_updated);
+      } catch (e) {
+        result.replaceChildren(el("p", e.message, "empty"));
+      }
+    }
+
+    async function showConstituency(name) {
+      if (!name) return;
+      result.replaceChildren(el("p", "Loading…", "hint"));
+      try {
+        const d = await getJSON("/constituencies/" + encodeURIComponent(name));
+        renderArea(d.constituency, d.tds, d.data_last_updated);
+      } catch (e) {
+        result.replaceChildren(el("p", e.message, "empty"));
+      }
+    }
+
+    map.on("click", e => runLookup(e.latlng));
+
+    const select = document.getElementById("constituency");
+    select.addEventListener("change", () => showConstituency(select.value));
+
+    getJSON("/constituencies").then(d => {
+      d.constituencies.forEach(name => {
+        const o = el("option", name); o.value = name; select.append(o);
+      });
+    }).catch(() => { select.disabled = true; });
+  </script>
+</body>
+</html>

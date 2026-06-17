@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Data artifacts (rebuilt by `refresh-reps`)
+data/raw/
+data/processed/
+data/representatives.db
+data/*.db.tmp
+
+# OS
+.DS_Store

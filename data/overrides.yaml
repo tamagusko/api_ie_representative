@@ -1,0 +1,34 @@
+# Manual overrides for the representative datastore.
+# Applied LAST during every `refresh-reps` run, so entries here always win
+# over fetched data. See README for the full schema.
+#
+# Examples (commented out, synthetic):
+#
+# tds:
+#   update:
+#     - match: {name: "John Example", constituency: "Dublin South-Central"}
+#       set: {email: "john.example@oireachtas.ie"}
+#   add:
+#     - name: "New TD"
+#       party: "Independent"
+#       email: "new.td@oireachtas.ie"
+#       constituency: "Dublin South-Central"
+#   remove:
+#     - {name: "Former TD"}
+
+# Email overrides. derive_email() builds forename.surname@oireachtas.ie from the
+# Oireachtas firstName/lastName fields, which covers compound forenames and
+# multi-token surnames. It cannot know about dropped middle names or nicknames,
+# so only those genuinely underivable addresses are pinned here.
+tds:
+  update:
+    # Middle name dropped from the official address.
+    - match: {name: "Paul Nicholas Gogarty", constituency: "Dublin Mid-West"}
+      set: {email: "paul.gogarty@oireachtas.ie"}      # not paulnicholas.gogarty
+    - match: {name: "Conor D McGuinness", constituency: "Waterford"}
+      set: {email: "conor.mcguinness@oireachtas.ie"}  # not conord.mcguinness
+    # Nickname vs registered forename.
+    - match: {name: "Frankie Feighan", constituency: "Sligo-Leitrim"}
+      set: {email: "frank.feighan@oireachtas.ie"}     # Frankie -> frank
+    - match: {name: "Ged Nash", constituency: "Louth"}
+      set: {email: "gerald.nash@oireachtas.ie"}       # Ged -> gerald

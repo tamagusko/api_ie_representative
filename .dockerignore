@@ -1,0 +1,16 @@
+# Keep the image small and the build context lean.
+.git
+.gitignore
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+temp/
+tests/
+*.db.tmp
+
+# Raw source GeoJSON (~150 MB) is only needed to BUILD boundaries.parquet, not to
+# serve. The processed parquet + representatives.db ARE copied in (see Dockerfile).
+data/raw/
