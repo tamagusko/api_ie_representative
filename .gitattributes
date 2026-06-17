@@ -1,0 +1,5 @@
+# Hugging Face Spaces require binary artifacts to be stored via Git LFS.
+# The deploy branch (see deploy-hf.sh) force-adds these data files; LFS keeps the
+# push acceptable. On GitHub these patterns are gitignored, so this is a no-op there.
+*.parquet filter=lfs diff=lfs merge=lfs -text
+*.db filter=lfs diff=lfs merge=lfs -text

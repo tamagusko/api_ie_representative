@@ -43,6 +43,17 @@ git remote add space "$SPACE_URL"
 
 # Build a deploy commit = current branch + the baked data artifacts.
 git checkout -q -B hf-deploy
+
+# Hugging Face rejects plain binaries; .gitattributes routes *.parquet/*.db
+# through Git LFS, so it must be installed and active for this push.
+if ! git lfs version >/dev/null 2>&1; then
+  echo "git-lfs is required (HF stores binaries via LFS). Install it, then re-run:" >&2
+  echo "  macOS:  brew install git-lfs" >&2
+  echo "  Debian: sudo apt-get install git-lfs" >&2
+  exit 1
+fi
+git lfs install --local >/dev/null
+
 git add -f "${DATA_FILES[@]}"
 git commit -q -m "deploy: bake TD data $(date +%Y-%m-%d)" || echo "(no data changes to commit)"
 

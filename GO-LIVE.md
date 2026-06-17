@@ -26,7 +26,8 @@ If you change code later: `git push origin main` (CI runs ruff + tests).
    **SDK = Docker**, visibility Public → **Create Space**.
    Its id is `<user>/<space>`.
 
-3. **Deploy from this repo**
+3. **Deploy from this repo** (needs Git LFS — HF stores the boundary `.parquet`
+   via LFS; install once with `brew install git-lfs`)
    ```bash
    uv run refresh-reps          # optional: refresh TD data first
    ./deploy-hf.sh https://huggingface.co/spaces/<user>/<space>
