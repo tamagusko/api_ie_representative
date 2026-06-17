@@ -2,16 +2,16 @@
 # Deploy this API to a Hugging Face Docker Space.
 #
 # The runtime data (data/processed/boundaries.parquet, data/representatives.db)
-# is gitignored, so it never reaches GitHub. The Space image bakes it in, so this
-# script force-adds those files onto a throwaway `hf-deploy` branch and pushes
-# that branch to the Space's `main`. Your normal history stays data-free.
+# is gitignored, so it is not in normal history. This script publishes a one-off
+# deploy commit that bundles those files, built inside a throwaway git worktree
+# so your main working tree and branch are never modified. HF requires binaries
+# via Git LFS; .gitattributes routes *.parquet/*.db through it.
 #
 # Usage:
 #   ./deploy-hf.sh https://huggingface.co/spaces/<user>/<space>
 #
-# Auth: when git prompts, use your HF username and a WRITE access token as the
-# password (huggingface.co > Settings > Access Tokens). Or run `huggingface-cli
-# login` first so the credential is cached.
+# Auth: when git prompts, username = your HF username, password = a WRITE access
+# token (huggingface.co > Settings > Access Tokens).
 #
 # Refresh the data before deploying with: uv run refresh-reps
 set -euo pipefail
@@ -19,6 +19,13 @@ set -euo pipefail
 SPACE_URL="${1:-}"
 if [ -z "$SPACE_URL" ]; then
   echo "usage: ./deploy-hf.sh https://huggingface.co/spaces/<user>/<space>" >&2
+  exit 1
+fi
+
+if ! git lfs version >/dev/null 2>&1; then
+  echo "git-lfs is required (HF stores binaries via LFS). Install it, then re-run:" >&2
+  echo "  macOS:  brew install git-lfs" >&2
+  echo "  Debian: sudo apt-get install git-lfs" >&2
   exit 1
 fi
 
@@ -34,32 +41,32 @@ for f in "${DATA_FILES[@]}"; do
   fi
 done
 
-ORIGINAL_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-cleanup() { git checkout -q "$ORIGINAL_BRANCH" 2>/dev/null || true; }
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+WORKTREE="$(mktemp -d)"
+cleanup() {
+  git -C "$REPO_ROOT" worktree remove --force "$WORKTREE" 2>/dev/null || true
+  rm -rf "$WORKTREE"
+}
 trap cleanup EXIT
 
-git remote remove space 2>/dev/null || true
-git remote add space "$SPACE_URL"
+# Isolated detached worktree at the current commit — the main tree is untouched.
+git worktree add -q --detach "$WORKTREE" HEAD
+git -C "$WORKTREE" remote add space "$SPACE_URL" 2>/dev/null \
+  || git -C "$WORKTREE" remote set-url space "$SPACE_URL"
+git -C "$WORKTREE" lfs install --local >/dev/null
 
-# Build a deploy commit = current branch + the baked data artifacts.
-git checkout -q -B hf-deploy
+# Copy the live data artifacts in and commit them (LFS-tracked via .gitattributes).
+for f in "${DATA_FILES[@]}"; do
+  mkdir -p "$WORKTREE/$(dirname "$f")"
+  cp "$REPO_ROOT/$f" "$WORKTREE/$f"
+done
+git -C "$WORKTREE" add -f "${DATA_FILES[@]}"
+git -C "$WORKTREE" commit -q -m "deploy: bake TD data $(date +%Y-%m-%d)" \
+  || echo "(no changes to commit)"
 
-# Hugging Face rejects plain binaries; .gitattributes routes *.parquet/*.db
-# through Git LFS, so it must be installed and active for this push.
-if ! git lfs version >/dev/null 2>&1; then
-  echo "git-lfs is required (HF stores binaries via LFS). Install it, then re-run:" >&2
-  echo "  macOS:  brew install git-lfs" >&2
-  echo "  Debian: sudo apt-get install git-lfs" >&2
-  exit 1
-fi
-git lfs install --local >/dev/null
-
-git add -f "${DATA_FILES[@]}"
-git commit -q -m "deploy: bake TD data $(date +%Y-%m-%d)" || echo "(no data changes to commit)"
-
-echo "Pushing hf-deploy -> space/main ..."
-git push -f space hf-deploy:main
+echo "Pushing -> space/main ..."
+git -C "$WORKTREE" push -f space HEAD:main
 
 echo
 echo "Done. Watch the build at: ${SPACE_URL%/}"
-echo "Live endpoint once built: <user>-<space>.hf.space/lookup?lat=53.322&lon=-6.29"
+echo "Live once built: <user>-<space>.hf.space/lookup?lat=53.322&lon=-6.29"
