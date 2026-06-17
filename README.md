@@ -1,3 +1,13 @@
+---
+title: Irish TD Lookup
+emoji: 🗳️
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Irish TD Lookup API
 
 Give it a coordinate in Ireland; it returns the Dáil constituency containing the
