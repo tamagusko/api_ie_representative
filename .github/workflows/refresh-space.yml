@@ -1,0 +1,34 @@
+name: Refresh HF Space (monthly TD update)
+
+# Hugging Face Spaces have no native cron, so this free GitHub Actions job
+# triggers a factory rebuild once a month. The rebuild re-runs the Dockerfile,
+# which re-fetches current TDs from the Oireachtas API (refresh-reps), so the
+# live API picks up co-options / by-elections without manual redeploys.
+#
+# One-time setup (repo Settings):
+#   - Secrets > Actions:   HF_TOKEN      = a Hugging Face WRITE access token
+#   - Variables > Actions: HF_SPACE_ID   = <user>/<space>  (e.g. tamagusko/irish-td-lookup)
+
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 06:00 UTC on the 1st of each month
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger factory rebuild
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+        run: |
+          pip install --quiet "huggingface_hub>=0.24"
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          space = os.environ["HF_SPACE_ID"]
+          HfApi(token=os.environ["HF_TOKEN"]).restart_space(space, factory_reboot=True)
+          print(f"Triggered factory rebuild of {space}")
+          PY

@@ -1,12 +1,13 @@
 # Irish TD lookup API — container image.
 #
-# Strategy: the processed boundary index (data/processed/boundaries.parquet, ~1.5 MB
-# after ETL simplification) and the TD database are baked into the image, so
-# the container boots in seconds with no network. Refresh them on the host with
-# `uv run refresh-reps`, rebuild the image, redeploy.
+# Strategy: the static boundary index (data/processed/boundaries.parquet, ~1.5 MB)
+# is baked in; current TDs are re-fetched from the Oireachtas API at build time,
+# so every (re)build ships fresh representative data. The container then boots in
+# seconds and serves with no network. The committed representatives.db is a
+# fail-soft fallback used only if the API is unreachable during a build.
 #
-# To instead rebuild the data INSIDE the image (self-contained, needs network at
-# build time), drop the two data COPY lines and uncomment the refresh RUN below.
+# A scheduled factory rebuild (.github/workflows/refresh-space.yml) is what makes
+# this refresh happen monthly on Hugging Face Spaces.
 
 FROM python:3.12-slim
 
@@ -23,13 +24,16 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN uv pip install --system --no-cache .
 
-# Bake the prebuilt data (boundary index + representatives DB + overrides).
+# Bake the static boundary index + overrides, plus the last-known TD database.
+# The committed DB lets the refresh below fail soft (carry forward) if the
+# Oireachtas API is unreachable at build time.
 COPY data/processed/boundaries.parquet ./data/processed/boundaries.parquet
 COPY data/representatives.db ./data/representatives.db
 COPY data/overrides.yaml ./data/overrides.yaml
 
-# --- Alternative: rebuild data at image-build time instead of baking it ---
-# RUN uv run refresh-reps
+# Re-fetch current TDs at build time so every (re)build ships fresh data.
+# Boundaries are static between reviews, so skip the heavy GeoJSON ETL.
+RUN refresh-reps --skip-boundaries
 
 # Hugging Face Spaces (and most PaaS) route to this port; override with --port.
 EXPOSE 7860
