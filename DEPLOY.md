@@ -1,109 +1,88 @@
-# Deploying the API for free
+# Deployment
 
-The app loads the boundary index into memory at startup. After ETL geometry
-simplification (`simplify_tolerance_m`, default 25 m) the index is ~1.5 MB and the
-resident footprint is ~120 MB, so it fits comfortably on free tiers.
+The service is a single long-lived container: the Dockerfile bakes the prebuilt
+data, re-fetches current TDs at build time, and serves on port 7860. Footprint
+is ~120 MB resident, so it fits free tiers. Hugging Face Spaces is the primary
+target; Render and Fly.io also work.
 
-## Recommendation for collisiontracker.ie
+Serverless hosts (Vercel, Netlify, Cloudflare Workers) are not a good fit — the
+in-memory boundary index would reload on every cold start.
 
-Run it as a small public service on its own subdomain and let both
-collisiontracker.ie and the public use it:
+## Hugging Face Spaces (recommended)
 
-- **Name**: `api.reps.ie` is taken-sounding; use a subdomain you already own —
-  `api.collisiontracker.ie` (or `reps.collisiontracker.ie`). It serves the JSON
-  API and a tiny demo page at `/`.
-- **Host**: **Hugging Face Spaces** (Docker, 16 GB RAM, free) for the simplest
-  always-on option, or **Fly.io** if you want the subdomain managed entirely in
-  your own infra. Both below.
-- **Make it safe and fast for the public**: put **Cloudflare** (free) in front of
-  the subdomain. You get TLS, caching, and rate-limiting without touching the
-  app. The API is already read-only, has no secrets, validates all input, and
-  sends open CORS for `GET` — so it is safe to expose; Cloudflare just protects
-  it from abuse. Responses are cacheable (data changes monthly), so set a
-  Cloudflare cache rule (e.g. 1 hour) on `/lookup*` and `/constituencies*`.
+Free, Docker-native, 16 GB RAM, public URL. Replace `<user>`/`<space>` with your
+HF username and Space name.
 
-Custom domain (same steps on any host): add a `CNAME` from
-`api.collisiontracker.ie` to the host's target (HF: `<user>-<space>.hf.space`;
-Fly: your `*.fly.dev`), then add the domain in the host's dashboard so it issues
-the certificate. With Cloudflare, the CNAME lives in Cloudflare DNS (proxied).
+1. **Create a write token**: huggingface.co → Settings → Access Tokens →
+   New token (type **Write**).
+2. **Create the Space**: huggingface.co/new-space → SDK = **Docker**,
+   visibility Public.
+3. **Deploy** (requires [Git LFS](https://git-lfs.com) — the Space stores the
+   boundary `.parquet` via LFS):
 
-The image bakes the prebuilt data (`data/processed/boundaries.parquet`,
-`data/representatives.db`). Refresh it on the host before building:
-
-```bash
-uv run refresh-reps          # rebuilds constituency boundaries + fetches TDs
-docker build -t irl-reps .
-docker run --rm -p 7860:7860 irl-reps
-curl "http://127.0.0.1:7860/lookup?lat=53.3220&lon=-6.2900"
-```
-
-## Option A — Hugging Face Spaces (recommended)
-
-16 GB RAM free, Docker-native, public URL. Best fit.
-
-1. Create a new **Docker** Space.
-2. Push this repo to it. The Space's root `README.md` must start with this
-   frontmatter (Spaces reads `app_port` from it):
-
-   ```yaml
-   ---
-   title: Irish TD Lookup
-   emoji: 🗳️
-   colorFrom: green
-   colorTo: blue
-   sdk: docker
-   app_port: 7860
-   pinned: false
-   ---
+   ```bash
+   uv run refresh-reps          # optional: refresh TD data first
+   ./deploy-hf.sh https://huggingface.co/spaces/<user>/<space>
    ```
 
-3. The 1.5 MB parquet and small DB commit fine without Git LFS. If you later bake a
-   larger DB, track binaries with LFS: `git lfs track "*.parquet" "*.db"`.
-4. The Space builds the Dockerfile and serves at
-   `https://<user>-<space>.hf.space/lookup?lat=53.3220&lon=-6.2900`.
+   When git prompts: username = HF username, password = the write token.
+   The script pushes the code plus the gitignored data files from an isolated
+   worktree, without touching your working tree.
+4. **Test** once the Space shows *Running* (~2–4 min):
 
-To make the Space self-refresh at build instead of committing data, edit the
-`Dockerfile`: remove the two data `COPY` lines and uncomment `RUN uv run
-refresh-reps` (build then needs network and runs ~minutes).
+   ```bash
+   curl "https://<user>-<space>.hf.space/lookup?lat=53.322&lon=-6.29"
+   ```
 
-## Option B — Render
+   The root URL serves the demo map page.
 
-Free web service, 512 MB RAM. Sleeps after 15 min idle (~30 s cold start) and the
-disk is ephemeral, so baking data into the image (as the Dockerfile does) is
-required — do not rely on a runtime `refresh-reps`.
+Note: the Space's `README.md` must keep the YAML frontmatter at the top of this
+repo's README — Spaces reads `sdk: docker` and `app_port: 7860` from it.
 
-- New → Web Service → from repo → Runtime: Docker.
-- No start command needed (the Dockerfile `CMD` runs uvicorn on 7860); Render maps
-  `$PORT` automatically, or set the port to 7860.
+## Monthly auto-update
 
-## Option C — Fly.io
+The image re-fetches TDs at build time, so a scheduled rebuild keeps the data
+current. [`.github/workflows/refresh-space.yml`](.github/workflows/refresh-space.yml)
+triggers a Space rebuild at 06:00 UTC on the 1st of each month. It needs two
+inputs in the GitHub repo (Settings → Secrets and variables → Actions):
 
-3 small VMs free. 256 MB may be tight with GeoPandas loaded; use 512 MB.
+- **Secret** `HF_TOKEN` — the HF write token.
+- **Variable** `HF_SPACE_ID` — `<user>/<space>`.
 
-```bash
-fly launch --no-deploy        # detects the Dockerfile
-fly deploy
-```
+Test it immediately via Actions → *Refresh HF Space (monthly TD update)* →
+*Run workflow*; afterwards `/health` shows a current `data_last_updated`.
 
-Scale memory if the VM OOMs at boot: `fly scale memory 512`.
+GitHub disables scheduled workflows after 60 days without repo activity; any
+commit or manual run keeps it alive.
 
-## The web page
+## Alternatives
 
-Visiting the deployed root (e.g. `https://api.collisiontracker.ie/`) serves a
-small map page anyone can use — click a point or pick a constituency to see
-its TDs. To embed it on collisiontracker.ie instead, host the single file
-`src/irl_reps/web/index.html` anywhere (or `<iframe>` the API root) and point it
-at the API with a query string: `index.html?api=https://api.collisiontracker.ie`.
-Because CORS is open for `GET`, the page works from any origin.
+- **Render** (free, 512 MB): New → Web Service → Runtime: Docker. Sleeps after
+  15 min idle (~30 s cold start); the disk is ephemeral, so rely on the baked
+  data, not a runtime refresh.
+- **Fly.io**: `fly launch --no-deploy && fly deploy`. Use 512 MB
+  (`fly scale memory 512`) — 256 MB is tight with GeoPandas loaded.
 
-## Not recommended
+## Custom domain
 
-Vercel / Netlify / Cloudflare Workers — serverless model reloads the index per
-cold start and caps bundle size; a long-lived process (the options above) is the
-right shape for this app.
+On any host: add a `CNAME` from your subdomain to the host's target
+(HF: `<user>-<space>.hf.space`), then register the domain in the host's
+dashboard so it issues a certificate. Optionally put Cloudflare (free) in front
+for TLS, caching, and rate limiting — responses change monthly, so a ~1 h cache
+rule on `/lookup*` and `/constituencies*` is safe.
 
-## Refresh cadence
+## Embedding the map page
 
-Representative data changes between elections, not daily. Re-run `uv run
-refresh-reps` monthly (or after a co-option), rebuild, redeploy. `data_last_updated`
-in every response and at `/health` reflects the last successful ETL.
+The demo page is a single static file (`src/irl_reps/web/index.html`). Host it
+anywhere and point it at the API with `index.html?api=https://<your-api-host>`
+— CORS is open for `GET`, so it works from any origin.
+
+## Maintenance
+
+- **Data refresh** is automatic once the monthly workflow is set. To force one:
+  re-run the workflow, or locally `uv run refresh-reps && ./deploy-hf.sh <url>`.
+- **After a general election or boundary review**: bump `DAIL_HOUSE_NO` in
+  `src/irl_reps/etl/oireachtas.py` and the constants in
+  `tests/test_data_integrity.py`, rebuild (`uv run refresh-reps`), redeploy.
+- Every response and `/health` carry `data_last_updated`, so live data age is
+  always visible.
