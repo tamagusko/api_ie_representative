@@ -15,19 +15,24 @@ on:
   workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
 
 jobs:
-  rebuild:
+  # GitHub disables scheduled workflows after 60 days without repo activity.
+  # Re-enabling via the API resets that timer, so the monthly schedule keeps
+  # itself alive without dummy commits. Kept in its own job so the
+  # write-scoped token never shares a runner with installed packages.
+  keepalive:
     runs-on: ubuntu-latest
     permissions:
-      actions: write # needed by the keep-alive step below
+      actions: write
     steps:
-      # GitHub disables scheduled workflows after 60 days without repo
-      # activity. Re-enabling via the API resets that timer, so the monthly
-      # schedule keeps itself alive without dummy commits.
       - name: Keep schedule alive
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/refresh-space.yml/enable"
 
+  rebuild:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
       - name: Trigger factory rebuild
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

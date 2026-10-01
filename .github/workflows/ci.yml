@@ -9,20 +9,25 @@ on:
     - cron: "0 6 1 * *"
 
 jobs:
-  test:
+  # GitHub disables scheduled workflows after 60 days without repo activity.
+  # Re-enabling via the API resets that timer. Kept in its own job so the
+  # write-scoped token never reaches checked-out code or dependencies.
+  keepalive:
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      actions: write # needed by the keep-alive step below
+      actions: write
     steps:
-      # GitHub disables scheduled workflows after 60 days without repo
-      # activity. Re-enabling via the API resets that timer.
       - name: Keep schedule alive
-        if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/ci.yml/enable"
 
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
