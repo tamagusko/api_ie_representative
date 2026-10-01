@@ -10,6 +10,9 @@ dependencies = [
     # hostname-poisoning issue. fastapi pulls starlette transitively; pin the
     # floor so it can never resolve back below the patched version.
     "starlette>=1.3.1",
+    # Security floor: anyio < 4.14.2 has a TLS host-name spoofing issue (IDNA
+    # 2003 encoding) and a process-pool hang. Pulled in via starlette.
+    "anyio>=4.14.2",
     "uvicorn>=0.30",
     "pydantic>=2.7",
     "geopandas>=1.0",
