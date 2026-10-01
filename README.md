@@ -116,3 +116,9 @@ simplification). The whole service fits in ~120 MB resident memory.
 uv run pytest        # spatial lookup, API contracts, ETL, fail-soft behaviour
 uv run ruff check .
 ```
+
+## Contributing and license
+
+Corrections and improvements are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Code is released under the [MIT License](LICENSE). The underlying data remains
+subject to the terms of its official sources.

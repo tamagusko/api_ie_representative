@@ -3,6 +3,7 @@ name = "irl-reps"
 version = "0.2.0"
 description = "Irish TD lookup API: coordinate -> Dail constituency + TDs"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

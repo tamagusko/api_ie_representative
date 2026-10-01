@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 # Install dependencies + the package itself (gives `refresh-reps` and the app).
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 RUN uv pip install --system --no-cache .
 
